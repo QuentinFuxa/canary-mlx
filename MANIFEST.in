@@ -2,15 +2,12 @@
 include LICENSE
 include README.md
 include pyproject.toml
-
-# Include package files
 recursive-include canary_mlx *.py
 
-# Exclude model files
+
 exclude model/*
 recursive-exclude model *
 
-# Exclude test/conversion data
 exclude other/*
 recursive-exclude other *
 exclude canary_untared/*
@@ -21,7 +18,6 @@ exclude *.nemo
 exclude *.tar
 exclude *.wav
 
-# Exclude cache
 global-exclude __pycache__
 global-exclude *.py[cod]
 
