@@ -1,13 +1,3 @@
-#!/usr/bin/env python3
-"""
-Convert NeMo Canary model to Canary MLX format.
-
-This script converts:
-- model_weights.ckpt -> model.safetensors (with proper key remapping)
-- model_config.yaml -> config.json (with proper structure for MLX)
-- Tokenizer files are copied and referenced in config.json
-"""
-
 import json
 import os
 import shutil
@@ -31,48 +21,25 @@ OUTPUT_CONFIG = OUTPUT_DIR / "config.json"
 def remap_weight_key(key: str) -> str:
     """Remap NeMo weight keys to MLX expected keys."""
     
-    # Skip preprocessor weights
     if key.startswith("preprocessor"):
-        return None
-    
-    # Skip fixed positional encoding (computed at runtime in MLX)
+        return None    
     if "position_embedding.pos_enc" in key:
-        return None
-    
-    # Skip batch norm tracking (not needed in MLX inference mode)
+        return None    
     if "num_batches_tracked" in key:
-        return None
-    
-    # Transformer decoder embedding remapping
-    # transf_decoder._embedding.X -> transf_decoder.X
+        return None    
     if key.startswith("transf_decoder._embedding."):
         key = key.replace("transf_decoder._embedding.", "transf_decoder.")
-        # layer_norm -> embedding_layer_norm
         key = key.replace("transf_decoder.layer_norm.", "transf_decoder.embedding_layer_norm.")
-    
-    # Transformer decoder layers remapping
-    # transf_decoder._decoder.layers.X -> transf_decoder.layers.X
     if key.startswith("transf_decoder._decoder.layers."):
         key = key.replace("transf_decoder._decoder.layers.", "transf_decoder.layers.")
-    
-    # Transformer decoder final_layer_norm
     if key.startswith("transf_decoder._decoder.final_layer_norm"):
         key = key.replace("transf_decoder._decoder.final_layer_norm", "transf_decoder.final_layer_norm")
-    
-    # Head/classifier remapping
-    # log_softmax.mlp.layer0.X -> head.classifier.X
     if key.startswith("log_softmax.mlp.layer0"):
         key = key.replace("log_softmax.mlp.layer0", "head.classifier")
-    
-    # Transformer attention layer naming
-    # query_net -> linear_q, key_net -> linear_k, value_net -> linear_v, out_projection -> linear_out
     key = key.replace(".query_net.", ".linear_q.")
     key = key.replace(".key_net.", ".linear_k.")
     key = key.replace(".value_net.", ".linear_v.")
     key = key.replace(".out_projection.", ".linear_out.")
-    
-    # Feed-forward layer naming
-    # dense_in -> linear1, dense_out -> linear2
     key = key.replace(".third_sub_layer.dense_in.", ".third_sub_layer.linear1.")
     key = key.replace(".third_sub_layer.dense_out.", ".third_sub_layer.linear2.")
     
@@ -81,7 +48,6 @@ def remap_weight_key(key: str) -> str:
 
 def convert_weights(input_path: Path, output_path: Path) -> None:
     """Convert NeMo checkpoint to MLX safetensors."""
-    print(f"Loading weights from {input_path}...")
     state_dict = torch.load(input_path, map_location="cpu", weights_only=False)
     
     skipped_keys = []
@@ -94,13 +60,9 @@ def convert_weights(input_path: Path, output_path: Path) -> None:
             skipped_keys.append(key)
             continue
         
-        # Clone shared tensors to avoid safetensors issues
         if isinstance(value, torch.Tensor):
             value = value.clone()
         
-        # Transpose conv weights from PyTorch to MLX format
-        # 2D Conv: PyTorch (out, in, H, W) -> MLX (out, H, W, in)
-        # 1D Conv: PyTorch (out, in, K) -> MLX (out, K, in)
         if "conv" in new_key and "weight" in new_key:
             if len(value.shape) == 4:
                 value = value.permute(0, 2, 3, 1).contiguous()
@@ -108,9 +70,7 @@ def convert_weights(input_path: Path, output_path: Path) -> None:
                 value = value.permute(0, 2, 1).contiguous()
         
         new_state[new_key] = value
-    
-    print(f"Converted {len(new_state)} weights, skipped {len(skipped_keys)} keys")
-    
+        
     output_path.parent.mkdir(parents=True, exist_ok=True)
     save_file(new_state, str(output_path))
     print(f"Saved weights to {output_path}")
@@ -118,12 +78,10 @@ def convert_weights(input_path: Path, output_path: Path) -> None:
 
 def convert_config(input_path: Path, output_path: Path) -> dict:
     """Convert NeMo YAML config to MLX JSON config."""
-    print(f"Loading config from {input_path}...")
     
     with open(input_path, "r") as f:
         nemo_config = yaml.safe_load(f)
     
-    # Extract preprocessor config
     preproc = nemo_config.get("preprocessor", {})
     preprocessor = {
         "sample_rate": preproc.get("sample_rate", 16000),
@@ -140,7 +98,6 @@ def convert_config(input_path: Path, output_path: Path) -> dict:
         "mag_power": preproc.get("mag_power", 2.0),
     }
     
-    # Extract encoder config
     enc = nemo_config.get("encoder", {})
     encoder = {
         "feat_in": enc.get("feat_in", 128),
@@ -161,11 +118,9 @@ def convert_config(input_path: Path, output_path: Path) -> dict:
         "att_context_size": enc.get("att_context_size"),
     }
     
-    # Extract decoder config (may be nested in config_dict)
     dec_raw = nemo_config.get("transf_decoder", {})
     dec = dec_raw.get("config_dict", dec_raw)  # Use config_dict if present
     
-    # Get vocab_size from head if not in decoder config
     vocab_size = dec.get("vocab_size", "None")
     if vocab_size == "None" or vocab_size is None:
         head_cfg = nemo_config.get("head", {})
@@ -184,7 +139,6 @@ def convert_config(input_path: Path, output_path: Path) -> dict:
         "max_sequence_length": dec.get("max_sequence_length", 1024),
     }
     
-    # Extract head config
     head_cfg = nemo_config.get("head", {})
     head = {
         "num_layers": head_cfg.get("num_layers", 1),
@@ -192,7 +146,6 @@ def convert_config(input_path: Path, output_path: Path) -> dict:
         "num_classes": head_cfg.get("num_classes", transf_decoder["vocab_size"]),
     }
     
-    # Build MLX config
     mlx_config = {
         "preprocessor": preprocessor,
         "encoder": encoder,
@@ -221,7 +174,6 @@ def copy_tokenizer(input_dir: Path, output_dir: Path) -> None:
         print("Warning: No tokenizer files found!")
         return
     
-    # Use the first tokenizer.model found
     src_path = tokenizer_files[0]
     dst_path = output_dir / "tokenizer.model"
     
@@ -230,9 +182,6 @@ def copy_tokenizer(input_dir: Path, output_dir: Path) -> None:
 
 
 def main():
-    print("=" * 60)
-    print("Canary NeMo to MLX Converter")
-    print("=" * 60)
     
     if not INPUT_WEIGHTS.exists():
         print(f"Error: {INPUT_WEIGHTS} not found!")
@@ -248,9 +197,7 @@ def main():
     convert_weights(INPUT_WEIGHTS, OUTPUT_WEIGHTS)
     copy_tokenizer(INPUT_DIR, OUTPUT_DIR)
     
-    print("=" * 60)
-    print(f"Conversion complete! Model saved to {OUTPUT_DIR}/")
-    print("=" * 60)
+    print(f"Conversion complete, model saved to {OUTPUT_DIR}/")
 
 
 if __name__ == "__main__":
