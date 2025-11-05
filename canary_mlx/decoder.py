@@ -40,11 +40,6 @@ class DecoderBlock(nn.Module):
     def __init__(self, config: DecoderConfig):
         super().__init__()
 
-        if config.pre_ln is False:
-            raise NotImplementedError(
-                "`pre_ln` = False for TransformerDecoder has not been implemented yet."
-            )
-
         self.layer_norm_1 = nn.LayerNorm(config.hidden_size, eps=1e-5)
         self.first_sub_layer = MultiHeadAttention(
             config.num_attention_heads,
@@ -145,7 +140,7 @@ class ClassificationHead(nn.Module):
 
         if config.num_layers != 1:
             raise NotImplementedError(
-                "Classification head with multiple layers not implemented."
+                "Classification head with multiple layers not implemented, should be 1"
             )
 
         self.classifier = nn.Linear(config.hidden_size, config.num_classes)
