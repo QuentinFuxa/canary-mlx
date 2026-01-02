@@ -87,7 +87,7 @@ class Canary(nn.Module):
         chunk_callback: Optional[Callable] = None,
     ) -> TranscriptionResult | str:
         """
-        Transcribe an audio file.
+        Transcribe an audio file (same language in/out).
         
         Args:
             path: Path to the audio file.
@@ -102,6 +102,84 @@ class Canary(nn.Module):
         Returns:
             TranscriptionResult with timing info, or just text if timestamps=False.
         """
+        return self._process_audio(
+            path=path,
+            source_language=language,
+            target_language=language,
+            timestamps=timestamps,
+            punctuation=punctuation,
+            dtype=dtype,
+            chunk_duration=chunk_duration,
+            overlap_duration=overlap_duration,
+            chunk_callback=chunk_callback,
+        )
+
+    def translate(
+        self,
+        path: Path | str,
+        source_language: str,
+        target_language: str = "en",
+        timestamps: bool = False,
+        punctuation: bool = True,
+        *,
+        dtype: mx.Dtype = mx.bfloat16,
+        chunk_duration: Optional[float] = None,
+        overlap_duration: float = 15.0,
+        chunk_callback: Optional[Callable] = None,
+    ) -> TranscriptionResult | str:
+        """
+        Translate audio from one language to another.
+        
+        Args:
+            path: Path to the audio file.
+            source_language: Language of the audio (e.g., "fr", "de", "es").
+            target_language: Target language for translation (default: "en").
+            timestamps: Whether to include word-level timestamps.
+            punctuation: Whether to include punctuation in output.
+            dtype: Data type for inference.
+            chunk_duration: If provided, process audio in chunks of this duration.
+            overlap_duration: Overlap between chunks in seconds.
+            chunk_callback: Callback function called after each chunk.
+            
+        Returns:
+            TranscriptionResult with timing info, or just text if timestamps=False.
+            
+        Example:
+            >>> result = model.translate("french_audio.wav", source_language="fr", target_language="en")
+            >>> print(result)  # English translation
+        """
+        if source_language == target_language:
+            raise ValueError(
+                f"source_language and target_language are the same ('{source_language}'). "
+                "Use transcribe() for same-language transcription."
+            )
+        
+        return self._process_audio(
+            path=path,
+            source_language=source_language,
+            target_language=target_language,
+            timestamps=timestamps,
+            punctuation=punctuation,
+            dtype=dtype,
+            chunk_duration=chunk_duration,
+            overlap_duration=overlap_duration,
+            chunk_callback=chunk_callback,
+        )
+
+    def _process_audio(
+        self,
+        path: Path | str,
+        source_language: str,
+        target_language: str,
+        timestamps: bool = False,
+        punctuation: bool = True,
+        *,
+        dtype: mx.Dtype = mx.bfloat16,
+        chunk_duration: Optional[float] = None,
+        overlap_duration: float = 15.0,
+        chunk_callback: Optional[Callable] = None,
+    ) -> TranscriptionResult | str:
+        """Internal method for processing audio (transcription or translation)."""
         audio_path = Path(path)
         audio_data = load_audio(audio_path, self.audio_config.sample_rate, dtype)
 
@@ -109,8 +187,8 @@ class Canary(nn.Module):
             prompt_tokens = build_prompt(
                 self.tokenizer,
                 self.prompt_format,
-                language,
-                language,
+                source_language,
+                target_language,
                 punctuation,
                 timestamp=timestamps,
             )
@@ -123,8 +201,8 @@ class Canary(nn.Module):
             prompt_tokens = build_prompt(
                 self.tokenizer,
                 self.prompt_format,
-                language,
-                language,
+                source_language,
+                target_language,
                 punctuation,
                 timestamp=timestamps,
             )
@@ -150,8 +228,8 @@ class Canary(nn.Module):
                 prompt_tokens = build_prompt(
                     self.tokenizer,
                     self.prompt_format,
-                    language,
-                    language,
+                    source_language,
+                    target_language,
                     punctuation,
                     context=previous_text,
                     timestamp=timestamps,
@@ -160,8 +238,8 @@ class Canary(nn.Module):
                 prompt_tokens = build_prompt(
                     self.tokenizer,
                     self.prompt_format,
-                    language,
-                    language,
+                    source_language,
+                    target_language,
                     punctuation,
                     timestamp=timestamps,
                 )

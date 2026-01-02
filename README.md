@@ -52,6 +52,27 @@ result = model.transcribe(
 )
 ```
 
+### Translation
+
+Translate audio from one language to another (speech-to-text translation):
+
+```python
+# Translate French audio to English
+result = model.translate(
+    "french_audio.wav",
+    source_language="fr",
+    target_language="en"
+)
+print(result)  # English text
+
+# Translate German audio to Spanish
+result = model.translate(
+    "german_audio.wav",
+    source_language="de",
+    target_language="es"
+)
+```
+
 ## Supported Languages
 
 Bulgarian (**bg**), Croatian (**hr**), Czech (**cs**), Danish (**da**), Dutch (**nl**), English (**en**), Estonian (**et**), Finnish (**fi**), French (**fr**), German (**de**), Greek (**el**), Hungarian (**hu**), Italian (**it**), Latvian (**lv**), Lithuanian (**lt**), Maltese (**mt**), Polish (**pl**), Portuguese (**pt**), Romanian (**ro**), Slovak (**sk**), Slovenian (**sl**), Spanish (**es**), Swedish (**sv**), Russian (**ru**), Ukrainian (**uk**)
@@ -70,11 +91,26 @@ Load a Canary model from a local directory or HuggingFace Hub.
 
 ### `model.transcribe(...)`
 
-Transcribe an audio file.
+Transcribe an audio file (same language in/out).
 
 **Parameters:**
 - `path`: Path to audio file
 - `language`: Language code (e.g., "en")
+- `timestamps`: Include word-level timestamps (default: `False`)
+- `punctuation`: Include punctuation (default: `True`)
+- `chunk_duration`: Process in chunks of this duration (optional)
+- `overlap_duration`: Overlap between chunks in seconds (default: `15.0`)
+
+**Returns:** `TranscriptionResult` if timestamps=True, else `str`
+
+### `model.translate(...)`
+
+Translate audio from one language to another.
+
+**Parameters:**
+- `path`: Path to audio file
+- `source_language`: Language of the audio (e.g., "fr", "de")
+- `target_language`: Target language for translation (default: "en")
 - `timestamps`: Include word-level timestamps (default: `False`)
 - `punctuation`: Include punctuation (default: `True`)
 - `chunk_duration`: Process in chunks of this duration (optional)
