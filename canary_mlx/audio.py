@@ -1,0 +1,181 @@
+"""Audio processing utilities for Canary MLX."""
+
+import functools
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+from subprocess import CalledProcessError, run
+
+import librosa
+import mlx.core as mx
+import numpy as np
+
+
+@dataclass
+class AudioConfig:
+    """Audio preprocessing configuration."""
+    sample_rate: int
+    normalize: str
+    window_size: float
+    window_stride: float
+    window: str
+    features: int
+    n_fft: int
+    dither: float
+    pad_to: int = 0
+    pad_value: float = 0
+    preemph: float | None = 0.97
+    mag_power: float = 2.0
+
+    @property
+    def win_length(self) -> int:
+        return int(self.window_size * self.sample_rate)
+
+    @property
+    def hop_length(self) -> int:
+        return int(self.window_stride * self.sample_rate)
+
+    def __post_init__(self):
+        self._filterbanks = mx.array(
+            librosa.filters.mel(
+                sr=self.sample_rate,
+                n_fft=self.n_fft,
+                n_mels=self.features,
+                fmin=0,
+                fmax=self.sample_rate / 2,
+                norm="slaney",
+            ),
+            dtype=mx.float32,
+        )
+
+
+def load_audio(
+    filename: Path, sampling_rate: int, dtype: mx.Dtype = mx.bfloat16
+) -> mx.array:
+    """Load audio file using ffmpeg."""
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError("FFmpeg is not installed or not in your PATH.")
+
+    cmd = ["ffmpeg", "-nostdin", "-i", str(filename)]
+    cmd.extend([
+        "-threads", "0",
+        "-f", "s16le",
+        "-ac", "1",
+        "-acodec", "pcm_s16le",
+        "-ar", str(sampling_rate),
+        "-",
+    ])
+    
+    try:
+        out = run(cmd, capture_output=True, check=True).stdout
+    except CalledProcessError as e:
+        raise RuntimeError(f"Failed to load audio: {e.stderr.decode()}") from e
+
+    return mx.array(np.frombuffer(out, np.int16).flatten()).astype(mx.float32) / 32768.0
+
+
+@functools.lru_cache(None)
+def hanning(size):
+    return mx.array(np.hanning(size + 1)[:-1])
+
+
+@functools.lru_cache(None)
+def hamming(size):
+    return mx.array(np.hamming(size + 1)[:-1])
+
+
+@functools.lru_cache(None)
+def blackman(size):
+    return mx.array(np.blackman(size + 1)[:-1])
+
+
+@functools.lru_cache(None)
+def bartlett(size):
+    return mx.array(np.bartlett(size + 1)[:-1])
+
+
+def stft(
+    x, n_fft, hop_length=None, win_length=None, window=None, axis=-1, pad_mode="reflect"
+):
+    """Short-time Fourier transform."""
+    if win_length is None:
+        win_length = n_fft
+    if hop_length is None:
+        hop_length = n_fft // 4
+    if window is None:
+        window = mx.ones(win_length)
+
+    if win_length != n_fft:
+        if win_length > n_fft:
+            window = window[:n_fft]
+        else:
+            padding = [(0, n_fft - win_length)]
+            window = mx.pad(window, padding)
+
+    def _pad(x, padding, pad_mode="constant"):
+        if pad_mode == "constant":
+            return mx.pad(x, [(padding, padding)])
+        elif pad_mode == "reflect":
+            prefix = x[1 : padding + 1][::-1]
+            suffix = x[-(padding + 1) : -1][::-1]
+            return mx.concatenate([prefix, x, suffix])
+        else:
+            raise ValueError(f"Invalid pad_mode {pad_mode}")
+
+    padding = n_fft // 2
+    x = _pad(x, padding, pad_mode)
+
+    strides = [hop_length, 1]
+    t = (x.size - win_length + hop_length) // hop_length
+    shape = [t, n_fft]
+    x = mx.as_strided(x, shape=shape, strides=strides)
+    return mx.fft.rfft(x * window)
+
+
+def compute_features(x: mx.array, config: AudioConfig) -> mx.array:
+    """Compute log-mel spectrogram features."""
+    original_dtype = x.dtype
+
+    if config.pad_to > 0:
+        if x.shape[-1] < config.pad_to:
+            pad_length = config.pad_to - x.shape[-1]
+            x = mx.pad(x, ((0, pad_length),), constant_values=config.pad_value)
+
+    if config.preemph is not None:
+        x = mx.concat([x[:1], x[1:] - config.preemph * x[:-1]], axis=0)
+
+    window = (
+        hanning(config.win_length).astype(x.dtype)
+        if config.window == "hanning"
+        else hamming(config.win_length).astype(x.dtype)
+        if config.window == "hamming"
+        else blackman(config.win_length).astype(x.dtype)
+        if config.window == "blackman"
+        else bartlett(config.win_length).astype(x.dtype)
+        if config.window == "bartlett"
+        else None
+    )
+    x = stft(x, config.n_fft, config.hop_length, config.win_length, window)
+    abs_val = mx.abs(mx.view(x, original_dtype))
+    x = abs_val[..., ::2] + abs_val[..., 1::2]
+
+    if config.mag_power != 1.0:
+        x = mx.power(x, config.mag_power)
+
+    x = mx.matmul(config._filterbanks.astype(x.dtype), x.T)
+    x = mx.log(x + 1e-5)
+
+    if config.normalize == "per_feature":
+        mean = mx.mean(x, axis=1, keepdims=True)
+        std = mx.std(x, axis=1, keepdims=True)
+        normalized_mel = (x - mean) / (std + 1e-5)
+    else:
+        mean = mx.mean(x)
+        std = mx.std(x)
+        normalized_mel = (x - mean) / (std + 1e-5)
+
+    normalized_mel = normalized_mel.T
+    normalized_mel = mx.expand_dims(normalized_mel, axis=0)
+
+    return normalized_mel.astype(original_dtype)
+

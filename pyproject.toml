@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "canary-mlx"
+version = "0.1.0"
+description = "NVIDIA Canary ASR model optimized for Apple Silicon with MLX"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+keywords = ["speech-recognition", "asr", "mlx", "apple-silicon", "canary", "transcription"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "mlx>=0.5.0",
+    "numpy>=1.24.0",
+    "librosa>=0.10.0",
+    "sentencepiece>=0.1.99",
+    "dacite>=1.8.0",
+    "huggingface_hub>=0.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.1.0",
+]
+convert = [
+    "torch>=2.0.0",
+    "safetensors>=0.4.0",
+    "pyyaml>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/canary-mlx"
+Repository = "https://github.com/yourusername/canary-mlx"
+Issues = "https://github.com/yourusername/canary-mlx/issues"
+
+[tool.setuptools.packages.find]
+include = ["canary_mlx*"]
+exclude = ["model*", "other*", "canary_untared*"]
+
+[tool.setuptools.package-data]
+canary_mlx = ["py.typed"]
+
+[tool.setuptools.exclude-package-data]
+"*" = [
+    "*.safetensors",
+    "*.ckpt",
+    "*.nemo",
+    "*.tar",
+    "*.wav",
+    "config.json",
+    "tokenizer.model",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
