@@ -83,6 +83,76 @@ def sentences_to_result(sentences: list[AlignedSentence]) -> TranscriptionResult
     return TranscriptionResult("".join(sentence.text for sentence in sentences), sentences)
 
 
+def _has_uniform_timestamps(tokens: list[AlignedToken]) -> bool:
+    """Check if all tokens have the same timestamp (no per-token timing)."""
+    if len(tokens) < 2:
+        return True
+    first_start = tokens[0].start
+    first_end = tokens[0].end
+    return all(t.start == first_start and t.end == first_end for t in tokens)
+
+
+def _merge_text_based(
+    a: list[AlignedToken],
+    b: list[AlignedToken],
+    min_match_len: int = 10,
+) -> list[AlignedToken]:
+    """Merge using text-based matching when timestamps aren't reliable.
+    
+    This finds contiguous sequences of matching token IDs between the
+    end of chunk A and the start of chunk B. Requires a minimum match
+    length to avoid false positives from common tokens.
+    """
+    if not a or not b:
+        return b if not a else a
+    
+    # Only search in expected overlap regions:
+    # - Last third of A (where overlap should be)
+    # - First third of B (where overlap should be)
+    # This avoids matching unrelated parts of the chunks
+    search_len_a = min(len(a) // 3 + 10, len(a))
+    search_len_b = min(len(b) // 3 + 10, len(b))
+    
+    overlap_a = a[-search_len_a:]
+    overlap_b = b[:search_len_b]
+    
+    # Find all contiguous matches using a sliding window approach
+    best_match = None  # (a_start, b_start, length)
+    
+    for i in range(len(overlap_a)):
+        for j in range(len(overlap_b)):
+            if overlap_a[i].id == overlap_b[j].id:
+                # Found a potential match start, extend it
+                match_len = 1
+                while (
+                    i + match_len < len(overlap_a)
+                    and j + match_len < len(overlap_b)
+                    and overlap_a[i + match_len].id == overlap_b[j + match_len].id
+                ):
+                    match_len += 1
+                
+                # Update best if this is longer
+                if best_match is None or match_len > best_match[2]:
+                    best_match = (i, j, match_len)
+    
+    # Check if we found a good enough match
+    if best_match is None or best_match[2] < min_match_len:
+        # No good overlap found - just concatenate (this handles non-overlapping chunks)
+        return a + b
+    
+    a_overlap_idx, b_overlap_idx, match_len = best_match
+    
+    # Convert overlap indices to full array indices
+    a_start_idx = len(a) - search_len_a
+    
+    # Take everything from A up to and INCLUDING the matched region
+    # Then take everything from B AFTER the matched region
+    cut_a = a_start_idx + a_overlap_idx + match_len  # Include the matched tokens from A
+    cut_b = b_overlap_idx + match_len  # Skip the matched tokens in B (they're duplicates)
+    
+    return a[:cut_a] + b[cut_b:]
+
+
 def merge_chunks(
     a: list[AlignedToken],
     b: list[AlignedToken],
@@ -92,6 +162,10 @@ def merge_chunks(
     """Merge two token lists from overlapping chunks."""
     if not a or not b:
         return b if not a else a
+
+    # If tokens don't have per-token timestamps (all same time), use text-based merge
+    if _has_uniform_timestamps(a) or _has_uniform_timestamps(b):
+        return _merge_text_based(a, b)
 
     a_end_time = a[-1].end
     b_start_time = b[0].start
@@ -105,10 +179,8 @@ def merge_chunks(
     enough_pairs = len(overlap_a) // 2
 
     if len(overlap_a) < 2 or len(overlap_b) < 2:
-        cutoff_time = (a_end_time + b_start_time) / 2
-        return [t for t in a if t.end <= cutoff_time] + [
-            t for t in b if t.start >= cutoff_time
-        ]
+        # Fall back to text-based merge if overlap detection fails
+        return _merge_text_based(a, b)
 
     best_contiguous = []
     for i in range(len(overlap_a)):
