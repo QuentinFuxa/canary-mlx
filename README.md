@@ -1,6 +1,17 @@
-# Canary MLX
+<h1 align="center">Canary MLX</h1>
+<p align="center"><b>NVIDIA Canary ASR model optimized for Apple Silicon using MLX.</b></p>
 
-NVIDIA Canary ASR model optimized for Apple Silicon using MLX.
+
+<p align="center">
+<a href="https://pypi.org/project/canary-mlx/"><img alt="PyPI Version" src="https://img.shields.io/pypi/v/canary-mlx?color=g"></a>
+<a href="https://pepy.tech/project/canary-mlx"><img alt="PyPI Downloads" src="https://static.pepy.tech/personalized-badge/canary-mlx?period=total&units=international_system&left_color=grey&right_color=brightgreen&left_text=installations"></a>
+<a href="https://pypi.org/project/canary-mlx/"><img alt="Python Versions" src="https://img.shields.io/badge/python-3.9--3.15-dark_green"></a>
+<a href="https://huggingface.co/qfuxa/canary-mlx">
+  <img alt="Hugging Face Weights" src="https://img.shields.io/badge/🤗-Hugging%20Face%20Weights-yellow" />
+</a>
+<a href="https://github.com/QuentinFuxa/WhisperLiveKit/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-dark_green"></a>
+</p>
+
 
 ## Installation
 
